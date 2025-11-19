@@ -1,0 +1,112 @@
+name: Download LayoutParser Model
+
+on:
+  workflow_dispatch:  # הפעלה ידנית
+  
+jobs:
+  download-and-upload:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      
+      - name: Install dependencies
+        run: |
+          pip install huggingface_hub requests
+      
+      - name: Download model from Dropbox alternative
+        run: |
+          python << 'EOF'
+          import urllib.request
+          from pathlib import Path
+          
+          print("📥 מוריד מודל PubLayNet...")
+          
+          # נסה מקורות חלופיים
+          urls = [
+              # URL מקורי (Dropbox - עלול להיחסם)
+              "https://www.dropbox.com/s/dgy9c10wykk4lq4/model_final.pth?dl=1",
+              # Azure blob (Microsoft)
+              "https://layoutlm.blob.core.windows.net/detectron2/publaynet/model_final.pth",
+          ]
+          
+          config_url = "https://www.dropbox.com/s/j4yseny2u0hn22r/config.yml?dl=1"
+          
+          # הורד config
+          try:
+              print("📥 מוריד config.yml...")
+              urllib.request.urlretrieve(config_url, "config.yml")
+              print("✅ config.yml הורד")
+          except Exception as e:
+              print(f"⚠️ Config נכשל: {e}")
+          
+          # הורד model
+          success = False
+          for i, url in enumerate(urls):
+              try:
+                  print(f"\n📥 מנסה מקור {i+1}/{len(urls)}: {url[:50]}...")
+                  urllib.request.urlretrieve(url, "model_final.pth")
+                  print(f"✅ הורדה הצליחה!")
+                  success = True
+                  break
+              except Exception as e:
+                  print(f"❌ נכשל: {e}")
+          
+          if not success:
+              print("❌ כל המקורות נכשלו")
+              exit(1)
+          
+          # בדוק גודל
+          size = Path("model_final.pth").stat().st_size / 1024 / 1024
+          print(f"\n📊 גודל: {size:.1f} MB")
+          
+          if size < 100:
+              print("⚠️ הקובץ קטן מדי, ייתכן ששגיאה")
+              exit(1)
+          
+          print("✅ המודל מוכן לפיצול!")
+          EOF
+      
+      - name: Split model into parts
+        run: |
+          python << 'EOF'
+          from pathlib import Path
+          
+          print("✂️ מפצל את המודל...")
+          
+          input_file = Path("model_final.pth")
+          chunk_size = 95 * 1024 * 1024  # 95MB
+          
+          part_num = 0
+          with open(input_file, 'rb') as infile:
+              while True:
+                  chunk = infile.read(chunk_size)
+                  if not chunk:
+                      break
+                  
+                  part_path = f"model_final.pth.part{part_num}"
+                  with open(part_path, 'wb') as outfile:
+                      outfile.write(chunk)
+                  
+                  size = len(chunk) / 1024 / 1024
+                  print(f"✅ {part_path} ({size:.1f} MB)")
+                  part_num += 1
+          
+          # מחק את המקור (לא צריך אותו)
+          input_file.unlink()
+          print(f"\n🎉 נוצרו {part_num} חלקים")
+          EOF
+      
+      - name: Commit and push files
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add model_final.pth.part* config.yml
+          git commit -m "🤖 Add LayoutParser model files (auto-downloaded)" || echo "No changes"
+          git push
