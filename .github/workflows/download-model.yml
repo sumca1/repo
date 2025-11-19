@@ -2,6 +2,9 @@ name: Download LayoutParser Model
 
 on:
   workflow_dispatch:  # הפעלה ידנית
+
+permissions:
+  contents: write  # הרשאה לכתיבה ל-repo
   
 jobs:
   download-and-upload:
@@ -110,3 +113,5 @@ jobs:
           git add model_final.pth.part* config.yml
           git commit -m "🤖 Add LayoutParser model files (auto-downloaded)" || echo "No changes"
           git push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
